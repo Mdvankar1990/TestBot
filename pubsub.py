@@ -10,9 +10,9 @@ subscribe_url = "https://pubsubhubbub.appspot.com/subscribe"
 
 
 # To subscribe to pubsubhubbub using channel id and feed id
-def subscribe(channel_id: str, feed_id):
+def subscribe(channel_id: str):
     yt_url = base_yt_url + channel_id
-    callback_url = base_callback_url + str(feed_id)
+    callback_url = base_callback_url + channel_id
     header = {
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36",
         "content-type": "application/x-www-form-urlencoded",

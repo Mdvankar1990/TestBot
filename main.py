@@ -1,10 +1,10 @@
 import os
-import time
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask, request, Response
 from flask_sqlalchemy import SQLAlchemy
 from telebot import TeleBot
+
 from pubsub import youtube_search_by_channel, subscribe
 
 app = Flask(__name__)
@@ -13,8 +13,7 @@ db = SQLAlchemy(app)
 Token = os.environ["TELE_Token"]
 bot = TeleBot(Token, parse_mode=None)
 bot.remove_webhook()
-bot.set_webhook(url=os.environ['BASE_URL'])
-
+op = bot.set_webhook(url=os.environ['BASE_URL'])
 user_sub = db.Table("user_sub", db.Column('user_id', db.Integer, db.ForeignKey("user_table.user_id")),
                     db.Column('channel_id', db.Integer, db.ForeignKey("subscription_table.channel_id")))
 
@@ -24,6 +23,7 @@ class Users(db.Model):
     user_id = db.Column(db.Integer, primary_key=True)
     user_chat_id = db.Column(db.Integer, nullable=False, unique=True)
     user_name = db.Column(db.String(150), nullable=False)
+    credit = db.Column(db.Integer, nullable=False)
 
 
 class Subscription(db.Model):
@@ -36,12 +36,15 @@ class Subscription(db.Model):
 def tel_parse_message(message):
     # print("message-->", message)
 
-    try:
+    if "message" in message:
         chat_id = message['message']['chat']['id']
         txt = message['message']['text']
-    except KeyError:
+    elif "edited_message" in message:
         chat_id = message['edited_message']['chat']['id']
         txt = message['edited_message']['text']
+    elif "inline_query":
+        chat_id = message['inline_query']['from']['id']
+        txt = message['inline_query']['query']
 
     if "/" in txt:
         command = txt.split(" ")[0].strip("/")
@@ -56,23 +59,24 @@ def tel_parse_message(message):
     return chat_id, txt, command, args
 
 
-
 def tel_send_message(chat_id, text):
     url = f'https://api.telegram.org/bot{Token}/sendMessage'
+
     payload = {
         'chat_id': chat_id,
         'text': text
     }
-
     r = requests.post(url, json=payload)
 
     return r
-
+def tel_send_payment():
+    pass
 
 
 @app.route("/", methods=['GET', 'POST'])
 def home():
     db.create_all()
+    print(request.method)
     if request.method == 'POST':
         msg = request.get_json()
         print(msg)
@@ -82,9 +86,11 @@ def home():
             new_user = Users()
             new_user.user_name = request.json['message']['chat']['first_name']
             new_user.user_chat_id = chat_id
+            new_user.credit = 200
             db.session.add(new_user)
             db.session.commit()
             current_user = new_user
+        print(chat_id)
         if command is None:
             if txt == "hi":
                 tel_send_message(chat_id, "Hello, world!")
@@ -102,16 +108,18 @@ def home():
                     channel_in_db = Subscription.query.get(query)
                     flag = False
                 else:
-                    tel_send_message(chat_id,"command is incorrect")
+                    tel_send_message(chat_id, "command is incorrect")
                     return "Error", 200
                 if channel_in_db:
                     if current_user in channel_in_db.users:
-                        tel_send_message(chat_id,"You are already subscriber.")
+                        tel_send_message(chat_id, "You are already subscriber.")
                     else:
                         current_user.subscriptions.append(channel_in_db)
+                        current_user.credit -= 20
                         db.session.add(current_user)
                         db.session.commit()
-                        tel_send_message(chat_id,"You are added as subscriber.")
+                        tel_send_message(chat_id,
+                                         "You are added as subscriber.\nYour current credit is {current_user.credit}")
                 else:
                     if flag:
                         sel_channel_id = youtube_search_by_channel(query)
@@ -119,26 +127,30 @@ def home():
                     else:
                         sel_channel_id = query
 
-
                     if not (sel_channel_id == " " or sel_channel_id == "Error occurred. Search again"):
-                        if subscribe(sel_channel_id, 1) == 202:
+                        if subscribe(sel_channel_id) == 202:
                             new_sub = Subscription()
                             new_sub.channel_name = query
                             new_sub.channel_id = sel_channel_id
                             new_sub.users.append(current_user)
+                            current_user.credit -= 20
                             db.session.add(new_sub)
+                            db.session.add(current_user)
                             db.session.commit()
-                            tel_send_message(chat_id, "subscribed")
+                            tel_send_message(chat_id, f"subscribed\nYour current credit is {current_user.credit}")
                     else:
                         print(sel_channel_id)
                         tel_send_message(chat_id, "Channel not found or error occurred while searching")
+            if command.title() == "Credit":
+                tel_send_message(chat_id, f"Your current credit is {current_user.credit}")
+
         return Response('ok', status=200)
     else:
         return "Welcome"
 
 
-@app.route("/feed/<feed_id>", methods=['GET', 'POST'])
-def feed(feed_id):
+@app.route("/feed/<channel_id>", methods=['GET', 'POST'])
+def feed(channel_id):
     if request.method == 'GET':
         if request.args != {}:
             return request.args['hub.challenge']
@@ -146,12 +158,10 @@ def feed(feed_id):
     if request.method == "POST":
         data = request.data.decode()
         soup = BeautifulSoup(data, 'lxml')
-        soup = BeautifulSoup(data, "lxml")
         channel = str(soup.find("uri")).strip("<uri>").strip("</")
         video_id = str(soup.find("id")).strip("<id>").strip("</").split(":")[2]
         video_title = str(soup.find_all("title")[1]).strip("<title>").strip("</")
         name = str(soup.find("name")).strip("<name>").strip("</")
-        channel_id = channel.split("/")[4]
         broadcast_channel = Subscription.query.get(channel_id)
         if broadcast_channel.channel_id == broadcast_channel.channel_name:
             broadcast_channel.channel_name = name
