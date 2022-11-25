@@ -16,6 +16,7 @@ Token = os.environ["TELE_Token"]
 bot = TeleBot(Token, parse_mode=None)
 inp = bot.remove_webhook()
 op = bot.set_webhook(url=os.environ['BASE_URL'])
+youtube_video_base_url = "https://www.youtube.com/watch?v="
 print(f"{inp}{op}")
 ###database tables and linkages
 user_sub = db.Table("user_sub", db.Column('user_id', db.Integer, db.ForeignKey("user_table.user_id")),
@@ -121,7 +122,6 @@ def tel_send_poll(chat_id):
 
 @app.route("/", methods=['GET', 'POST'])
 def home():
-    print("hey")
     db.create_all()
     if request.method == 'POST':
         msg = request.get_json()
@@ -210,16 +210,16 @@ def feed(channel_id):
         data = request.data.decode()
         soup = BeautifulSoup(data, 'lxml')
         channel = str(soup.find("uri")).strip("<uri>").strip("</")
-        video_id = str(soup.find("id")).strip("<id>").strip("</").split(":")[2]
+        video = youtube_video_base_url + str(soup.find("id")).strip("<id>").strip("</").split(":")[2]
         video_title = str(soup.find_all("title")[1]).strip("<title>").strip("</")
         name = str(soup.find("name")).strip("<name>").strip("</")
         # channel_id = channel.split("/")[-1]
         broadcast_channel = Subscription.query.get(channel_id)
         if broadcast_channel.channel_id == broadcast_channel.channel_name:
             broadcast_channel.channel_name = name
-        print(f"{channel}{video_id}{video_title}{name}{channel_id}")
+        print(f"{channel}{video}{video_title}{name}{channel_id}")
         for item in broadcast_channel.users:
-            msg = f"Hey {item.user_name},\n{name} have {video_title} check that out from link below:\n{channel}"
+            msg = f"Hey {item.user_name},\n{name} uploaded:\n{video_title}\ncheck that out from link below:\n{video}"
             tel_send_message(item.user_chat_id, msg)
         return "Success", 201
 
