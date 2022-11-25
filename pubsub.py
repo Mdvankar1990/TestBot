@@ -1,5 +1,4 @@
 import os
-
 import requests
 
 youtube_search_url = "https://www.googleapis.com/youtube/v3/search"
@@ -28,7 +27,8 @@ def subscribe(channel_id: str):
             "hub.secret": "",
             "hub.lease_seconds": ""}
     response = requests.post(subscribe_url, headers=header, data=body)
-    response.raise_for_status()
+    # response.raise_for_status()
+    print(response)
     return response.status_code
 
 
@@ -48,6 +48,8 @@ def youtube_search_by_channel(my_query: str):
     sel_channel_id = " "
     for item in items:
         if item['snippet']['title'] == my_query:
+            # print(item['snippet']['title'])
             sel_channel_id = item['snippet']['channelId']
-
+            break
+    # print(sel_channel_id)
     return sel_channel_id
